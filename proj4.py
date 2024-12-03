@@ -1,4 +1,5 @@
 import csv
+import random
 
 """
 한자 퀴즈 프로그램
@@ -81,11 +82,17 @@ class Question:
         self.meaning = meaning
         self.pronunciation = pronunciation
 
+    # 뜻이나 음이 맞을 경우 true 반환
     def check_answer(self, answer: str) -> bool:
-        pass
+        return answer == self.meaning or answer == self.pronunciation
 
-    def generate_options(self, all_list, num_options=4):
-        pass
+    # 해당 한자를 제외한 나머지 리스트에서 원하는 수만큼 랜덤 보기를 생성하여 반환
+    def generate_options(self, all_list: list, num_options=4):
+        if num_options > len(all_list):
+            return ValueError("가능한 보기 개수를 초과하였습니다")
+
+        filtered_list = [data for data in all_list if data.get("한자") != self.character]
+        return random.sample(filtered_list, num_options-1)  # 정답 요소는 제외
 
 
 # GUI 띄우기
@@ -128,6 +135,8 @@ def main():
 
     level4_semi = DataManager()
     level4_semi.load('level4_semi.csv')
+
+
 
 
 if __name__ == "__main__":
