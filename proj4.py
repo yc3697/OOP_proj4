@@ -55,23 +55,23 @@ class ResultManager:
     def __init__(self):
         self.total_questions = 0
         self.correct_count = 0
-        self.wrong_count = 0
         self.wrong_answers = []
 
-    def record_correct_answer(self, correct: dict):
-        pass
+    def set_total_questions(self, num_total: int):
+        self.total_questions = num_total
+
+    def record_correct_num(self, correct: dict):
+        self.correct_count += 1
 
     def record_wrong_answer(self, wrong: dict):
-        pass
-
-    def set_results(self, correct: int, total: int):
-        pass
+        self.wrong_answers.append(wrong)
 
     def get_correct_rate(self) -> float:
-        pass
+        return (self.correct_count/self.total_questions)*100
 
+    # 정답 개수와 전체 문제 수를 반환
     def get_results(self) -> dict:
-        pass
+        return {"correct": self.correct_count, "total": self.total_questions}
 
 
 # 문제 관련
