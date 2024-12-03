@@ -17,7 +17,12 @@ class DataManager:
         self.hanja_list = []
 
     def load(self, filename: str):
-        pass
+        self.level = filename[0:-4]
+
+        with open(filename, mode='r', encoding='utf-8') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                self.hanja_list.append(row)
 
 
 # 퀴즈 관리
@@ -102,7 +107,27 @@ class UIManager:
 
 
 def main():
-    pass
+    # DB 형성
+    level8 = DataManager()
+    level8.load('level8.csv')
+
+    level7 = DataManager()
+    level7.load('level7.csv')
+
+    level6 = DataManager()
+    level6.load('level6.csv')
+
+    level5 = DataManager()
+    level5.load('level5.csv')
+
+    level5_semi = DataManager()
+    level5_semi.load('level5_semi.csv')
+
+    level4 = DataManager()
+    level4.load('level4.csv')
+
+    level4_semi = DataManager()
+    level4_semi.load('level4_semi.csv')
 
 
 if __name__ == "__main__":
