@@ -39,6 +39,7 @@ class QuizManager:
         for db in DataManager.all_DB:
             if db.level == level:
                 self.hanja_list.extend(db.hanja_list)
+        print(self.hanja_list)
         if len(self.hanja_list) == 0:
             raise ValueError("해당 급수의 데이터는 존재하지 않습니다.")
 
@@ -57,7 +58,9 @@ class QuizManager:
             for i in range(0, num_quiz):
                 # 문제 생성
                 random_index = random.randint(0, len(self.hanja_list) - 1)
+                print(random_index)
                 random_question = self.hanja_list[random_index]
+                print(random_question)
                 question = Question(random_question['한자'], random_question['음'], random_question['뜻'])
 
                 # 질문
@@ -84,6 +87,7 @@ class QuizManager:
     def retry_wrong_answers(self):
         wrong_answer_notes = QuizManager()
         wrong_answer_notes.load_data_from_list(self.result_manager.wrong_answers)
+        print("오답 노트", wrong_answer_notes.hanja_list)
         wrong_answer_notes.start_quiz(len(self.result_manager.wrong_answers))
 
 
