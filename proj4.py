@@ -13,9 +13,12 @@ QuizManager로 문제를 출제하며 UIManager로 GUI를 표현한다.
 
 # 한자 데이터 DB
 class DataManager:
+    all_DB = []
+
     def __init__(self):
         self.level: str = ""
         self.hanja_list = []
+        DataManager.all_DB.append(self)
 
     def load(self, filename: str):
         self.level = filename[0:-4]
@@ -32,23 +35,52 @@ class QuizManager:
         self.hanja_list = []
         self.result_manager = ResultManager()
 
-    def load_questions(self, questions: list):
-        pass
+    def load_data_from_db(self, level: str):
+        self.hanja_list = [db.hanja_list for db in DataManager.all_DB if db.level == level]
+        if len(self.hanja_list)==0:
+            raise ValueError("해당 급수의 데이터는 존재하지 않습니다.")
 
-    def start_quiz(self, hanja_list, type_question):
-        pass
+    def load_data_from_list(self, hanja_list: list):
+        self.hanja_list = hanja_list
 
-    def ask_questions(self, question: dict):
-        pass
+    def start_quiz(self, num_quiz: int, type_question: str = "주관식"):
 
-    def check_answer(self, input_answer):
-        pass
+        if num_quiz > len(self.hanja_list):
+            raise ValueError("개수를 초과하였습니다")
+        else:
+            self.result_manager.set_total_questions(len(self.hanja_list))
 
+        if type_question == "주관식":
+            # 랜덤 인덱스로 참고해서 데이터 얻어와서 Question 객체 생성 .. num_quiz 만큼 반복하면서 ask랑 check
+            for i in range(0, num_quiz):
+                # 문제 생성
+                random_index = random.randint(0, len(self.hanja_list) - 1)
+                random_question = self.hanja_list[random_index]
+                question = Question(**random_question)
+
+                # 질문
+                self.ask_questions(question)
+
+                # 정답 확인 및 결과 처리
+                user_answer = input("음/뜻을 입력하시오 (e.g. 하늘/천)")
+                if question.check_answer(user_answer):
+                    self.result_manager.record_correct_num()
+                else:
+                    self.result_manager.record_wrong_answer(random_question)
+
+        # 추후 구현
+        # elif type_question == "객관식":
+        # # 방식 위랑 동일하고 generate_options()도 같이
+
+        else:
+            raise ValueError("잘못된 문제 입력입니다")
+
+    def ask_questions(self, question: 'Question'):
+        print(question.character)
     def retry_wrong_answers(self):
-        pass
-
-    def get_results(self) -> dict:
-        pass
+        wrong_answer_notes = QuizManager()
+        wrong_answer_notes.load_data_from_list(self.result_manager.wrong_answers)
+        wrong_answer_notes.start_quiz(len(self.result_manager.wrong_answers))
 
 
 # 결과 저장
@@ -61,7 +93,7 @@ class ResultManager:
     def set_total_questions(self, num_total: int):
         self.total_questions = num_total
 
-    def record_correct_num(self, correct: dict):
+    def record_correct_num(self):
         self.correct_count += 1
 
     def record_wrong_answer(self, wrong: dict):
@@ -82,9 +114,11 @@ class Question:
         self.meaning = meaning
         self.pronunciation = pronunciation
 
-    # 뜻이나 음이 맞을 경우 true 반환
+    # 뜻이나 음, 혹은 두 가지 모두 맞을 경우 true 반환
     def check_answer(self, answer: str) -> bool:
-        return answer == self.meaning or answer == self.pronunciation
+        return (answer == self.meaning
+                or answer == self.pronunciation
+                or answer == self.pronunciation+'/'+self.meaning)
 
     # 해당 한자를 제외한 나머지 리스트에서 원하는 수만큼 랜덤 보기를 생성하여 반환
     def generate_options(self, all_list: list, num_options=4):
@@ -109,11 +143,18 @@ class UIManager:
     def show_final_results(self, correct_count: int, total_questions: int):
         pass
 
-    def select_menu(self) -> int:
+    def select_menu(self):
+        """
+        다른 급수 풀어보기 : 급수 선택 창 띄워서 load_data_from_db(급수)로 세팅 후 start_quiz()
+        틀린 문제 다시 풀어보기 : retry_wrong_answers()
+        종료 : 종료
+        """
         pass
 
 
 def main():
+    ## 내부 로직 테스트
+
     # DB 형성
     level8 = DataManager()
     level8.load('level8.csv')
@@ -135,8 +176,6 @@ def main():
 
     level4_semi = DataManager()
     level4_semi.load('level4_semi.csv')
-
-
 
 
 if __name__ == "__main__":
