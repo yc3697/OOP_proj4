@@ -36,8 +36,10 @@ class QuizManager:
         self.result_manager = ResultManager()
 
     def load_data_from_db(self, level: str):
-        self.hanja_list = [db.hanja_list for db in DataManager.all_DB if db.level == level]
-        if len(self.hanja_list)==0:
+        for db in DataManager.all_DB:
+            if db.level == level:
+                self.hanja_list.extend(db.hanja_list)
+        if len(self.hanja_list) == 0:
             raise ValueError("해당 급수의 데이터는 존재하지 않습니다.")
 
     def load_data_from_list(self, hanja_list: list):
@@ -48,7 +50,7 @@ class QuizManager:
         if num_quiz > len(self.hanja_list):
             raise ValueError("개수를 초과하였습니다")
         else:
-            self.result_manager.set_total_questions(len(self.hanja_list))
+            self.result_manager.set_total_questions(num_quiz)
 
         if type_question == "주관식":
             # 랜덤 인덱스로 참고해서 데이터 얻어와서 Question 객체 생성 .. num_quiz 만큼 반복하면서 ask랑 check
@@ -56,7 +58,7 @@ class QuizManager:
                 # 문제 생성
                 random_index = random.randint(0, len(self.hanja_list) - 1)
                 random_question = self.hanja_list[random_index]
-                question = Question(**random_question)
+                question = Question(random_question['한자'], random_question['음'], random_question['뜻'])
 
                 # 질문
                 self.ask_questions(question)
@@ -64,8 +66,10 @@ class QuizManager:
                 # 정답 확인 및 결과 처리
                 user_answer = input("음/뜻을 입력하시오 (e.g. 하늘/천)")
                 if question.check_answer(user_answer):
+                    print("정답입니다")
                     self.result_manager.record_correct_num()
                 else:
+                    print("오답입니다")
                     self.result_manager.record_wrong_answer(random_question)
 
         # 추후 구현
@@ -109,10 +113,10 @@ class ResultManager:
 
 # 문제 관련
 class Question:
-    def __init__(self, character: str, meaning: str, pronunciation: str):
+    def __init__(self, character: str, pronunciation: str, meaning: str):
         self.character = character
-        self.meaning = meaning
         self.pronunciation = pronunciation
+        self.meaning = meaning
 
     # 뜻이나 음, 혹은 두 가지 모두 맞을 경우 true 반환
     def check_answer(self, answer: str) -> bool:
@@ -152,6 +156,49 @@ class UIManager:
         pass
 
 
+# 내부 로직 흐름 파악용(실행 흐름 참고)
+def process():
+    test: QuizManager = QuizManager()
+    while True:
+        try:
+            level = input("급수 입력(e.g. 4급 = level4, 준4급 = level4_semi): ")
+            test.load_data_from_db(level)
+            break
+        except ValueError as e:
+            print(f"Error: {e}")
+
+    while True:
+        try:
+            num_prob = int(input("문제 개수 입력(e.g. 100): "))
+            test.start_quiz(num_prob)
+            break
+        except ValueError as e:
+            print(f"Error: {e}")
+
+    print(test.result_manager.get_results())
+
+    while True:
+        print("옵션 입력")
+        print("1. 처음부터 도전(!!!기존 내용은 초기화 됩니다!!!)")
+        print("2. 틀린 문제 다시 풀어보기")
+        print("3. 종료")
+
+        options = int(input("옵션 번호 입력: "))
+
+        if options == 1:
+            process()
+            break
+        elif options == 2:
+            test.retry_wrong_answers()
+        elif options == 3:
+            break
+        else:
+            print("잘못된 입력")
+            continue
+
+    return
+
+
 def main():
     ## 내부 로직 테스트
 
@@ -176,6 +223,9 @@ def main():
 
     level4_semi = DataManager()
     level4_semi.load('level4_semi.csv')
+
+    # 실행
+    process()
 
 
 if __name__ == "__main__":
