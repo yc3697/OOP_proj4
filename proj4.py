@@ -6,36 +6,21 @@ from tkinter import messagebox
 """
 한자 퀴즈 프로그램
 ---------------
-급수별 한자 데이터가 DataManager에 저장되어 있다.(4~8급)
-QuizManager로 문제를 출제하며 UIManager로 GUI를 표현한다.
+급수별 한자 데이터가 DataManager에 저장되어 있다.(4~9급)
+QuizManager로 문제를 출제하며 QuizGui로 GUI를 표현한다.
 결과는 ResultManager에서 관리한다.
-
 """
-
-
-# 문제 관련 - 맨 위로 이동
-class Question:
-    def __init__(self, character: str, pronunciation: str, meaning: str):
-        self.character = character
-        self.pronunciation = pronunciation
-        self.meaning = meaning
-
-    def check_answer(self, answer: str) -> bool:
-        return (answer == self.meaning
-                or answer == self.pronunciation
-                or answer == self.pronunciation + '/' + self.meaning)
-
-    def generate_options(self, all_list: list, num_options=4):
-        if num_options > len(all_list):
-            return ValueError("가능한 보기 개수를 초과하였습니다")
-
-        filtered_list = [data for data in all_list if data.get("한자") != self.character]
-        return random.sample(filtered_list, num_options - 1)  # 정답 요소는 제외
-
 
 # 한자 데이터 DB
 class DataManager:
     all_DB = []
+
+    @classmethod
+    def load_all_levels(cls):
+        """모든 급수의 데이터 로드"""
+        for level in range(4, 10):
+            db = cls()
+            db.load(f'level{level}.csv')
 
     def __init__(self):
         self.level: str = ""
@@ -58,52 +43,63 @@ class QuizManager:
         self.result_manager = ResultManager()
         self.current_question = 0
         self.total_questions = 0
+        self.is_wrong_answer_mode = False
         self.quiz_list = []
 
     def load_data_from_db(self, level: str):
+        self.hanja_list = []  # 리스트 초기화
         for db in DataManager.all_DB:
             if db.level == level:
-                self.hanja_list.extend(db.hanja_list)
-        print(self.hanja_list)
+                # extend 대신 리스트를 복사해서 추가
+                self.hanja_list.extend(db.hanja_list.copy())
         if len(self.hanja_list) == 0:
             raise ValueError("해당 급수의 데이터는 존재하지 않습니다.")
+        # 리스트를 섞어서 저장
+        random.shuffle(self.hanja_list)
 
     def load_data_from_list(self, hanja_list: list):
         self.hanja_list = hanja_list
 
     def start_quiz(self, num_quiz: int):
-        """퀴즈 시작"""
         if num_quiz > len(self.hanja_list):
             raise ValueError("개수를 초과하였습니다")
-
         self.current_question = 0
         self.total_questions = num_quiz
-        self.result_manager = ResultManager()
 
-        # 문제 리스트 생성
-        shuffled_list = self.hanja_list.copy()
-        random.shuffle(shuffled_list)
-        self.quiz_list = shuffled_list[:num_quiz]
+        if self.is_wrong_answer_mode:
+            self.quiz_list = self.hanja_list[:num_quiz]
+        else:
+            self.result_manager = ResultManager()
+            shuffled_list = self.hanja_list.copy()
+            random.shuffle(shuffled_list)
+            self.quiz_list = shuffled_list[:num_quiz]
 
         self.result_manager.set_total_questions(num_quiz)
 
-    def get_next_question(self) -> Question:
-        """다음 문제 가져오기"""
+    def get_next_question(self) -> 'Question':
         if self.current_question >= self.total_questions:
             raise ValueError("모든 문제를 다 풀었습니다")
 
         question = self.quiz_list[self.current_question]
         self.current_question += 1
-        return Question(question['한자'], question['음'], question['뜻'])
+        return Question(question['한자'], question['뜻'], question['음'])
 
-    def ask_questions(self, question: 'Question'):
-        print(question.character)
+    def create_wrong_answer_quiz(self) -> 'QuizManager':
+        """오답 노트용 새 QuizManager 생성"""
+        # 중복 제거된 틀린 문제 리스트 생성
+        unique_wrong_answers = []
+        seen_hanja = set()
 
-    def retry_wrong_answers(self):
+        for wrong in self.result_manager.wrong_answers:
+            if wrong['한자'] not in seen_hanja:
+                unique_wrong_answers.append(wrong)
+                seen_hanja.add(wrong['한자'])
+
         wrong_answer_notes = QuizManager()
-        wrong_answer_notes.load_data_from_list(self.result_manager.wrong_answers)
-        print("오답 노트", wrong_answer_notes.hanja_list)
-        wrong_answer_notes.start_quiz(len(self.result_manager.wrong_answers))
+        wrong_answer_notes.is_wrong_answer_mode = True
+        wrong_answer_notes.load_data_from_list(unique_wrong_answers)  # 중복 제거된 리스트 사용
+        wrong_answer_notes.start_quiz(len(unique_wrong_answers))
+        return wrong_answer_notes
 
 
 # 결과 저장
@@ -123,24 +119,41 @@ class ResultManager:
         self.wrong_answers.append(wrong)
 
     def get_correct_rate(self) -> float:
-        return (self.correct_count / self.total_questions) * 100
+        return (self.correct_count/self.total_questions)*100
 
-    # 정답 개수와 전체 문제 수를 반환
     def get_results(self) -> dict:
         return {"correct": self.correct_count, "total": self.total_questions}
 
 
+# 문제 관련
+class Question:
+    def __init__(self, character: str, meaning: str, pronunciation: str):
+        self.character = character
+        self.meaning = meaning
+        self.pronunciation = pronunciation
+
+    # 뜻과 음이 모두 맞을 경우에만 true 반환
+    def check_answer(self, answer: str) -> bool:
+        try:
+            meaning, pronunciation = answer.split()  # 공백으로 분리
+            return meaning == self.meaning and pronunciation == self.pronunciation
+        except ValueError:  # 공백이 없거나 공백이 여러 개인 경우
+            return False
+
+
 # GUI 띄우기
-class UIManager:
-    def __init__(self):
-        self.root = tk.Tk()
+class QuizGui:
+    def __init__(self, root):
+        self.root = root
         self.root.title("한자 급수 QUIZ")
         self.root.geometry("800x600")
         self.root.configure(bg="#B1D095")
 
-        self.quiz_manager = QuizManager()
         self.main_frame = tk.Frame(self.root, bg="#B1D095")
         self.main_frame.pack(fill="both", expand=True)
+
+        self.quiz_manager = QuizManager()
+        self.create_main_menu()
 
     def clear_frame(self):
         """프레임 내의 모든 위젯 제거"""
@@ -148,7 +161,7 @@ class UIManager:
             widget.destroy()
 
     def create_main_menu(self):
-        """메인 메뉴 화면"""
+        """메인 메뉴 화면 표시"""
         self.clear_frame()
 
         title = tk.Label(
@@ -168,13 +181,28 @@ class UIManager:
             width=20,
             height=2,
             bg="#548235",
-            fg="black"
+            fg="black",
+            relief="flat",
+            highlightthickness=0,
+            bd=0,
         )
         start_button.pack(pady=(20, 0))
+
+        def on_enter(e):
+            start_button.configure(bg="#2F9D27")
+
+        def on_leave(e):
+            start_button.configure(bg="#58623F")
+
+        start_button.bind("<Enter>", on_enter)
+        start_button.bind("<Leave>", on_leave)
 
     def select_level(self):
         """급수 선택 화면"""
         self.clear_frame()
+
+        # 새로운 QuizManager 생성하여 모든 결과 초기화
+        self.quiz_manager = QuizManager()
 
         title_label = tk.Label(
             self.main_frame,
@@ -185,51 +213,29 @@ class UIManager:
         )
         title_label.pack(pady=(100, 50))
 
-        # 버튼을 담을 프레임들 생성
-        button_frame1 = tk.Frame(self.main_frame, bg="#B1D095")
-        button_frame1.pack(pady=10)
+        button_frame = tk.Frame(self.main_frame, bg="#B1D095")
+        button_frame.pack(pady=20)
 
-        button_frame2 = tk.Frame(self.main_frame, bg="#B1D095")
-        button_frame2.pack(pady=10)
-
-        # 상단 줄에 9, 8, 7급 버튼
-        levels_top = ['level9', 'level8', 'level7']
-        for level in levels_top:
-            display_text = f"{level[-1]}급"
+        for level in ['4급', '5급', '6급', '7급', '8급', '9급']:
             level_button = tk.Button(
-                button_frame1,
-                text=display_text,
+                button_frame,
+                text=level,
                 font=("Arial", 16, "bold"),
-                command=lambda l=level: self.select_question_count(l),
                 width=8,
                 height=2,
                 bg="#548235",
-                fg="black"
+                fg="black",
+                command=lambda l=level: self.choose_problem_count(l)
             )
             level_button.pack(side=tk.LEFT, padx=10)
 
-        # 하단 줄에 6, 5, 4급 버튼
-        levels_bottom = ['level6', 'level5', 'level4']
-        for level in levels_bottom:
-            display_text = f"{level[-1]}급"
-            level_button = tk.Button(
-                button_frame2,
-                text=display_text,
-                font=("Arial", 16, "bold"),
-                command=lambda l=level: self.select_question_count(l),
-                width=8,
-                height=2,
-                bg="#548235",
-                fg="black"
-            )
-            level_button.pack(side=tk.LEFT, padx=10)
-
-    def select_question_count(self, level):
+    def choose_problem_count(self, level):
         """문제 개수 선택 화면"""
         self.clear_frame()
+        selected_level = f'level{level.replace("급", "")}'
 
         try:
-            self.quiz_manager.load_data_from_db(level)
+            self.quiz_manager.load_data_from_db(selected_level)
         except ValueError as e:
             messagebox.showerror("Error", str(e))
             self.select_level()
@@ -237,275 +243,232 @@ class UIManager:
 
         title_label = tk.Label(
             self.main_frame,
-            text="문제 개수를 입력하세요",
+            text="도전할 문제의 개수를 선택하시오",
             font=("Arial", 36, "bold"),
             bg="#B1D095",
             fg="black"
         )
-        title_label.pack(pady=(100, 20))
+        title_label.pack(pady=(200, 0))
 
-        # 급수별 최대 문제 개수 안내
-        info_text = "(각 급수별 최대 문제 개수)\n" + \
-                    "9급: 50개\n" + \
-                    "8급: 100개\n" + \
-                    "7급: 150개\n" + \
-                    "6급: 150개\n" + \
-                    "5급: 150개\n" + \
-                    "4급: 200개"
-
-        info_label = tk.Label(
+        subtitle_label = tk.Label(
             self.main_frame,
-            text=info_text,
-            font=("Arial", 14),
+            text="(숫자만 입력하시오.  9급 : 50개, 8급 : 100개, 7급 : 150개,\n6급 : 150개, 5급 : 150개, 4급 : 200개)",
+            font=("Arial", 20),
             bg="#B1D095",
             fg="black"
         )
-        info_label.pack(pady=(0, 30))
+        subtitle_label.pack(pady=(20, 50))
 
-        self.count_entry = tk.Entry(
+        entry_frame = tk.Frame(
             self.main_frame,
-            font=("Arial", 20, "bold"),
-            width=10
+            bg="#B1D095"
         )
-        self.count_entry.pack(pady=20)
+        entry_frame.pack(pady=20)
 
-        start_button = tk.Button(
-            self.main_frame,
-            text="시작하기",
-            font=("Arial", 16, "bold"),
-            command=lambda: self.start_quiz(int(self.count_entry.get())),
-            bg="#548235",
-            fg="black"
+        self.problem_count_entry = tk.Entry(
+            entry_frame,
+            font=("Arial", 16),
+            width=30,
+            justify='center'
         )
-        start_button.pack(pady=20)
+        self.problem_count_entry.pack()
 
-    def start_quiz(self, question_count):
+        underline = tk.Frame(
+            entry_frame,
+            height=2,
+            bg="black"
+        )
+        underline.pack(fill='x', pady=(0, 20))
+
+        level_num = int(level.replace('급', ''))
+
+        def press_enter(event):
+            count = self.problem_count_entry.get()
+            if count.isdigit():
+                count = int(count)
+                max_problems = {
+                    9: 50,
+                    8: 100,
+                    7: 150,
+                    6: 150,
+                    5: 150,
+                    4: 200
+                }
+                if 1 <= count <= max_problems[level_num]:
+                    self.start_quiz(count)
+                else:
+                    messagebox.showerror("오류", f"{level_num}급의 최대 문제 개수는 {max_problems[level_num]}개입니다.")
+            else:
+                messagebox.showerror("오류", "숫자만 입력해주세요.")
+
+        self.problem_count_entry.bind('<Return>', press_enter)
+        self.problem_count_entry.focus()
+
+    def start_quiz(self, num_questions):
         """퀴즈 시작"""
         try:
-            self.quiz_manager.start_quiz(question_count)
-            # 첫 문제를 가져와서 display_question에 전달
-            first_question = self.quiz_manager.get_next_question()
-            self.display_question(first_question)
+            self.quiz_manager.start_quiz(num_questions)
+            self.show_question()
         except ValueError as e:
             messagebox.showerror("Error", str(e))
             self.select_level()
 
-    def display_question(self, question: Question):
-        """문제 표시"""
+    def show_question(self):
+        """문제 화면 표시"""
         self.clear_frame()
 
-        question_label = tk.Label(
-            self.main_frame,
-            text=f"다음 한자의 음과 뜻을 입력하세요:\n{question.character}",
-            font=("Arial", 36, "bold"),
-            bg="#B1D095",
-            fg="black"
-        )
-        question_label.pack(pady=(100, 20))
+        try:
+            question = self.quiz_manager.get_next_question()
 
-        # 입력 형식 안내
-        format_label = tk.Label(
-            self.main_frame,
-            text="(음/뜻 형식으로 입력하세요)",
-            font=("Arial", 14),
-            bg="#B1D095",
-            fg="black"
-        )
-        format_label.pack(pady=(0, 30))
-
-        # 결과 표시 레이블 추가
-        self.result_label = tk.Label(
-            self.main_frame,
-            text="",
-            font=("Arial", 20, "bold"),
-            bg="#B1D095",
-            fg="black"
-        )
-        self.result_label.pack(pady=10)
-
-        self.answer_entry = tk.Entry(
-            self.main_frame,
-            font=("Arial", 20, "bold"),
-            width=20
-        )
-        self.answer_entry.pack(pady=20)
-        self.answer_entry.focus()  # 자동으로 입력 포커스
-
-        # Enter 키 바인딩 추가
-        self.answer_entry.bind('<Return>', lambda e: self.check_answer(question))
-
-        submit_button = tk.Button(
-            self.main_frame,
-            text="제출",
-            font=("Arial", 16, "bold"),
-            command=lambda: self.check_answer(question),
-            bg="#548235",
-            fg="black"
-        )
-        submit_button.pack(pady=20)
-
-    def check_answer(self, question: Question):
-        """답안 확인"""
-        answer = self.answer_entry.get()
-        self.answer_entry.delete(0, tk.END)  # 입력 필드 초기화
-
-        if question.check_answer(answer):
-            self.quiz_manager.result_manager.record_correct_num()
-            self.result_label.config(
-                text="정답입니다!",
-                fg="#2F9D27"  # 초록색
+            question_label = tk.Label(
+                self.main_frame,
+                text="다음 한자의 뜻/음을 입력하세요:",
+                font=("Arial", 24, "bold"),
+                bg="#B1D095",
+                fg="black"
             )
+            question_label.pack(pady=(50, 20))
+
+            format_label = tk.Label(
+                self.main_frame,
+                text="(뜻 음 형식으로 입력하세요. 예: 한 일)",
+                font=("Arial", 16),
+                bg="#B1D095",
+                fg="black"
+            )
+            format_label.pack(pady=(0, 20))
+
+            hanja_label = tk.Label(
+                self.main_frame,
+                text=question.character,
+                font=("Arial", 70),
+                bg="#B1D095",
+                fg="black"
+            )
+            hanja_label.pack(pady=20)
+
+            # 결과 표시 레이블 추가
+            self.result_label = tk.Label(
+                self.main_frame,
+                text="",
+                font=("Arial", 20),
+                bg="#B1D095",
+                fg="black"
+            )
+            self.result_label.pack(pady=10)
+
+            self.answer_entry = tk.Entry(
+                self.main_frame,
+                font=("Arial", 14),
+                width=30,
+                justify='center'
+            )
+            self.answer_entry.pack(pady=10)
+            self.answer_entry.focus()
+
+            self.answer_entry.bind('<Return>', lambda e: self.check_answer(question))
+
+        except ValueError:
+            self.show_result()
+
+    def check_answer(self, question):
+        """답안 체크"""
+        user_answer = self.answer_entry.get()
+        self.answer_entry.delete(0, tk.END)
+
+        if question.check_answer(user_answer):
+            self.quiz_manager.result_manager.record_correct_num()
+            self.result_label.config(text="정답입니다!", fg="#2F9D27")
         else:
             self.quiz_manager.result_manager.record_wrong_answer({
-                "한자": question.character,
-                "음": question.pronunciation,
-                "뜻": question.meaning
+                '한자': question.character,
+                '뜻': question.meaning,
+                '음': question.pronunciation
             })
             self.result_label.config(
-                text=f"오답입니다.\n정답: {question.pronunciation}/{question.meaning}",
-                fg="#FF0000"  # 빨간색
+                text=f"오답입니다.\n정답은 {question.meaning} {question.pronunciation} 입니다.",
+                fg="#FF0000"  # 빨간색으로 표시
             )
 
-        # 1초 후 다음 문제로 이동
-        self.root.after(1000, self.display_next_question)
+        self.root.after(1000, self.show_question)  # 1초 후 다음 문제로
 
-    def display_next_question(self):
-        """다음 문제 표시 또는 결과 화면으로 이동"""
-        if self.quiz_manager.current_question < self.quiz_manager.total_questions:
-            self.display_question(self.quiz_manager.get_next_question())
-        else:
-            self.show_final_results()
-
-    def show_final_results(self):
-        """최종 결과 화면"""
+    def show_result(self):
+        """결과 화면 표시"""
         self.clear_frame()
 
         results = self.quiz_manager.result_manager.get_results()
         correct_rate = self.quiz_manager.result_manager.get_correct_rate()
 
+        result_text = f"결과: {results['correct']}/{results['total']}\n정답률: {correct_rate:.1f}%"
+
         result_label = tk.Label(
             self.main_frame,
-            text=f"결과: {results['correct']}/{results['total']}\n정답률: {correct_rate:.1f}%",
+            text=result_text,
             font=("Arial", 36, "bold"),
             bg="#B1D095",
             fg="black"
         )
         result_label.pack(pady=(100, 50))
 
+        button_frame = tk.Frame(self.main_frame, bg="#B1D095")
+        button_frame.pack(pady=20)
+
         retry_button = tk.Button(
-            self.main_frame,
+            button_frame,
             text="다시 도전",
-            font=("Arial", 16),
-            command=self.select_level,
+            font=("Arial", 16, "bold"),
+            width=12,
+            height=2,
             bg="#548235",
-            fg="black"
+            fg="black",
+            command=self.select_level
         )
-        retry_button.pack(pady=20)
+        retry_button.pack(side=tk.LEFT, padx=10)
 
         if len(self.quiz_manager.result_manager.wrong_answers) > 0:
             wrong_button = tk.Button(
-                self.main_frame,
+                button_frame,
                 text="오답 다시 풀기",
-                font=("Arial", 16),
-                command=self.retry_wrong_answers,
+                font=("Arial", 16, "bold"),
+                width=12,
+                height=2,
                 bg="#548235",
-                fg="black"
+                fg="black",
+                command=self.retry_wrong_answers
             )
-            wrong_button.pack(pady=20)
+            wrong_button.pack(side=tk.LEFT, padx=10)
+
+        # 종료 버튼 추가
+        exit_button = tk.Button(
+            button_frame,
+            text="종료",
+            font=("Arial", 16, "bold"),
+            width=12,
+            height=2,
+            bg="#548235",
+            fg="black",
+            command=self.root.destroy  # 프로그램 종료
+        )
+        exit_button.pack(side=tk.LEFT, padx=10)
 
     def retry_wrong_answers(self):
         """오답 다시 풀기"""
         try:
-            # 새로운 QuizManager 생성
-            wrong_quiz_manager = QuizManager()
-            wrong_quiz_manager.load_data_from_list(self.quiz_manager.result_manager.wrong_answers)
-
-            # 기존 QuizManager를 새로운 것으로 교체
-            self.quiz_manager = wrong_quiz_manager
-
-            # 오답 문제들로 새로운 퀴즈 시작
-            self.quiz_manager.start_quiz(len(self.quiz_manager.hanja_list))
-
-            # 첫 문제 표시
-            first_question = self.quiz_manager.get_next_question()
-            self.display_question(first_question)
-
+            self.quiz_manager = self.quiz_manager.create_wrong_answer_quiz()
+            self.show_question()
         except ValueError as e:
             messagebox.showerror("Error", str(e))
             self.select_level()
 
-    def run(self):
-        """GUI 실행"""
-        self.create_main_menu()
-        self.root.mainloop()
-
-
-# 내부 로직 흐름 파악용(실행 흐름 참고)
-def process():
-    test: QuizManager = QuizManager()
-    while True:
-        try:
-            level = input("급수 입력(e.g. 4급 = level4, 준4급 = level4_semi): ")
-            test.load_data_from_db(level)
-            break
-        except ValueError as e:
-            print(f"Error: {e}")
-
-    while True:
-        try:
-            num_prob = int(input("문제 개수 입력(e.g. 100): "))
-            test.start_quiz(num_prob)
-            break
-        except ValueError as e:
-            print(f"Error: {e}")
-
-    print(test.result_manager.get_results())
-
-    while True:
-        print("옵션 입력")
-        print("1. 처음부터 도전(!!!기존 내용은 초기화 됩니다!!!)")
-        print("2. 틀린 문제 다시 풀어보기")
-        print("3. 종료")
-
-        options = int(input("옵션 번호 입력: "))
-
-        if options == 1:
-            process()
-            break
-        elif options == 2:
-            test.retry_wrong_answers()
-        elif options == 3:
-            break
-        else:
-            print("잘못된 입력")
-            continue
-
-    return
-
 
 def main():
-    # DB 형성 - 4-9급만 로드
-    level9 = DataManager()
-    level9.load('level9.csv')
-
-    level8 = DataManager()
-    level8.load('level8.csv')
-
-    level7 = DataManager()
-    level7.load('level7.csv')
-
-    level6 = DataManager()
-    level6.load('level6.csv')
-
-    level5 = DataManager()
-    level5.load('level5.csv')
-
-    level4 = DataManager()
-    level4.load('level4.csv')
+    # DB 형성
+    DataManager.load_all_levels()
 
     # GUI 실행
-    ui = UIManager()
-    ui.run()
+    root = tk.Tk()
+    app = QuizGui(root)
+    root.mainloop()
 
 
 if __name__ == "__main__":
